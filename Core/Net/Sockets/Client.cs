@@ -5,6 +5,9 @@ using System.Threading.Tasks;
 
 namespace Core.Net.Sockets
 {
+	public enum ClientStatus { Connected, Disconnected }
+	public delegate void ClientStatusChanged(Client server, ClientStatus status);
+
 	/// <summary>
 	/// A delegate associated with socket-connection events.
 	/// </summary>
@@ -39,8 +42,14 @@ namespace Core.Net.Sockets
 		}
 		private void Initialize(TcpClient socket)
 		{
+			Console.WriteLine("Initialize Client");
 			_socket = socket;
 			_buffer = new byte[_socket.ReceiveBufferSize];
+			if (_socket.Connected)
+			{
+				Console.WriteLine("Client Connected, ReceiveBufferSize: " + _buffer.Length);
+				StartReceive();
+			}
 		}
 
 		#region Properties
@@ -62,7 +71,7 @@ namespace Core.Net.Sockets
 		/// <summary>
 		/// An event raised when the client is disconnecting.
 		/// </summary>
-		public event ClientConnection OnDisconnect;
+		public event ClientStatusChanged OnStatusChanged;
 		/// <summary>
 		/// An event raised when the client has send data to the server.
 		/// </summary>
@@ -71,14 +80,29 @@ namespace Core.Net.Sockets
 
 		public async void ConnectAsync(string host, int port)
 		{
-			await _socket.ConnectAsync(host, port);
-			StartReceive();
+			try
+			{
+				await _socket.ConnectAsync(host, port);
+				StartReceive();
+				OnStatusChanged?.Invoke(this, ClientStatus.Connected);
+			}
+			catch (SocketException ex)
+			{
+				Console.WriteLine("ClientConnectSocketException: " + ex);
+			}
 		}
 
 		public async void ConnectAsync(IPAddress address, int port)
 		{
-			await _socket.ConnectAsync(address, port);
-			StartReceive();
+			try
+			{
+				await _socket.ConnectAsync(address, port);
+				StartReceive();
+			}
+			catch (SocketException ex)
+			{
+				Console.WriteLine("ClientConnectSocketException: " + ex);
+			}
 		}
 
 		/// <summary>
@@ -86,24 +110,25 @@ namespace Core.Net.Sockets
 		/// </summary>
 		public void Disconnect()
 		{
-			if (!Connected)
-				return;
-
 			Dispose();
 			Initialize();
 
-			OnDisconnect?.Invoke(this);
+			OnStatusChanged?.Invoke(this, ClientStatus.Disconnected);
 		}
 		private async void StartReceive()
 		{
 			if (!Connected)
 				return;
 
+			Console.WriteLine("Start Recieve");
+
 			try
 			{
 				int length = await _socket.Client.ReceiveAsync(new ArraySegment<byte>(_buffer), SocketFlags.None);
 				if (length > 0)
 					OnReceive?.Invoke(this, _buffer.Copy(length));
+				else
+					throw new SocketException();
 				Console.WriteLine("Received data from Client " + length);
 				StartReceive();
 			}
@@ -112,9 +137,9 @@ namespace Core.Net.Sockets
 			catch (Exception ex) { Console.WriteLine("BeginReceiveException: " + ex); }
 		}
 
-		public async void Send(byte[] data)
+		public async void SendAsync(byte[] data)
 		{
-			if (!Connected)
+			if (!Connected || data?.Length <= 0)
 				return;
 
 			try { await _socket.Client.SendAsync(new ArraySegment<byte>(data), SocketFlags.None); }
@@ -132,7 +157,8 @@ namespace Core.Net.Sockets
 			catch { }
 			finally
 			{
-				OnDisconnect = null;
+				OnStatusChanged?.Invoke(this, ClientStatus.Connected);
+				OnStatusChanged = null;
 				OnReceive = null;
 				_socket = null;
 				_buffer = null;

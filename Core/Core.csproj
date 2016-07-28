@@ -39,7 +39,9 @@
     <None Include="project.json" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Net\Extensions\ByteExtensions.cs" />
+    <Compile Include="ConsoleWriter.cs" />
+    <Compile Include="EventHandler.cs" />
+    <Compile Include="Extensions\ByteExtensions.cs" />
     <Compile Include="Net\Sockets\Client.cs" />
     <Compile Include="Net\Sockets\Server.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

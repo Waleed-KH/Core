@@ -5,6 +5,9 @@ using System.Collections.Generic;
 
 namespace Core.Net.Sockets
 {
+	public enum ServerStatus { Inactive, Active }
+	public delegate void ServerStatusChanged(Server server, ServerStatus status);
+
 	public class Server
 	{
 		private TcpListener _socket;
@@ -16,7 +19,7 @@ namespace Core.Net.Sockets
 		/// </summary>
 		/// <param name="port">The port on which to listen for incoming connection attempts.</param>
 		public Server(ushort port)
-			: this(new TcpListener(IPAddress.IPv6Any, port))
+			: this(new TcpListener(IPAddress.Any, port))
 		{
 		}
 
@@ -61,6 +64,7 @@ namespace Core.Net.Sockets
 		#endregion
 
 		#region Events
+		public event ServerStatusChanged OnStatusChanged;
 		/// <summary>
 		/// An event raised when a client is connected.
 		/// </summary>
@@ -86,12 +90,14 @@ namespace Core.Net.Sockets
 			try
 			{
 				_socket.Start();
+				Console.WriteLine("ServerStart");
 				_active = true;
 				AcceptClients();
+				OnStatusChanged?.Invoke(this, ServerStatus.Active);
 			}
-			catch (SocketException)
+			catch (SocketException ex)
 			{
-
+				Console.WriteLine("StartSocketException: " + ex);
 			}
 		}
 		/// <summary>
@@ -105,11 +111,13 @@ namespace Core.Net.Sockets
 			try
 			{
 				_socket.Stop();
+				Console.WriteLine("ServerStop");
 				_active = false;
+				OnStatusChanged?.Invoke(this, ServerStatus.Inactive);
 			}
-			catch (SocketException)
+			catch (SocketException ex)
 			{
-
+				Console.WriteLine("StopSocketException: " + ex);
 			}
 		}
 		private async void AcceptClients()
@@ -117,8 +125,13 @@ namespace Core.Net.Sockets
 			if (!_active)
 				return;
 
-			try { InitializeClient(await _socket.AcceptTcpClientAsync()); }
-			catch (SocketException ex) { Console.WriteLine("AcceptClientsException: " + ex); }
+			try
+			{
+				Console.WriteLine("Waiting for a Client");
+				InitializeClient(await _socket.AcceptTcpClientAsync());
+			}
+			catch (SocketException ex) { Console.WriteLine("AcceptClientsSocketException: " + ex); }
+			catch (ObjectDisposedException ex) { Console.WriteLine("AcceptClientsObjectDisposedException: " + ex); }
 			catch (Exception ex) { Console.WriteLine("AcceptClientsException: " + ex); }
 			finally { AcceptClients(); }
 		}
@@ -131,7 +144,11 @@ namespace Core.Net.Sockets
 			Console.WriteLine("Accept Client");
 			Client client = new Client(socket);
 			client.OnReceive += OnClientReceive;
-			client.OnDisconnect += OnClientDisconnect;
+			client.OnStatusChanged += (c, s) =>
+			{
+				if (s == ClientStatus.Disconnected)
+					OnClientDisconnect?.Invoke(c);
+			};
 			OnClientConnect?.Invoke(client);
 		}
 	}
