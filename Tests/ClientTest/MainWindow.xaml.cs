@@ -34,7 +34,7 @@ namespace Core.Tests.ClientTest
 		{
 			ClientSwitch.IsEnabled = false;
 			if (!App.MyClient.Connected)
-				App.MyClient.ConnectAsync(IPAddress.Parse("192.168.1.40"), 2741);
+				App.MyClient.ConnectAsync(IPAddress.Parse("127.0.0.1"), 2741);
 			else
 				App.MyClient.Disconnect();
 		}

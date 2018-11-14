@@ -56,11 +56,11 @@ namespace Core.Net.Sockets
 		/// <summary>
 		/// Gets a value indicating whether the Client is connected to the Server.
 		/// </summary>
-		public bool Connected { get { return _socket?.Connected ?? false; } }
+		public bool Connected => _socket?.Connected ?? false;
 		/// <summary>
 		/// Gets the client remote IP endpoint.
 		/// </summary>
-		public IPEndPoint RemoteIPEndPoint { get { return (IPEndPoint)_socket?.Client.RemoteEndPoint ?? null; } }
+		public IPEndPoint RemoteIPEndPoint => (IPEndPoint)_socket?.Client.RemoteEndPoint ?? null;
 		/// <summary>
 		/// An object which is the owner of the client.
 		/// </summary>
@@ -82,9 +82,11 @@ namespace Core.Net.Sockets
 		{
 			try
 			{
-				await _socket.ConnectAsync(host, port);
-				StartReceive();
-				OnStatusChanged?.Invoke(this, ClientStatus.Connected);
+				if (!Connected)
+				{
+					await _socket.ConnectAsync(host, port);
+					OnConnected();
+				}
 			}
 			catch (SocketException ex)
 			{
@@ -96,8 +98,11 @@ namespace Core.Net.Sockets
 		{
 			try
 			{
-				await _socket.ConnectAsync(address, port);
-				StartReceive();
+				if (!Connected)
+				{
+					await _socket.ConnectAsync(address, port);
+					OnConnected();
+				}
 			}
 			catch (SocketException ex)
 			{
@@ -110,10 +115,22 @@ namespace Core.Net.Sockets
 		/// </summary>
 		public void Disconnect()
 		{
-			Dispose();
+			_socket.Dispose();
+			_socket = null;
+			_buffer = null;
 			Initialize();
 
 			OnStatusChanged?.Invoke(this, ClientStatus.Disconnected);
+		}
+		public async void SendAsync(byte[] data)
+		{
+			if (!Connected || data?.Length <= 0)
+				return;
+
+			try { await _socket.Client.SendAsync(new ArraySegment<byte>(data), SocketFlags.None); }
+			catch (SocketException ex) { Console.WriteLine("SendSocketException: " + ex); Disconnect(); }
+			catch (ObjectDisposedException ex) { Console.WriteLine("SendDisposedException: " + ex); Dispose(false); }
+			catch (Exception ex) { Console.WriteLine("SendException: " + ex); }
 		}
 		private async void StartReceive()
 		{
@@ -132,20 +149,14 @@ namespace Core.Net.Sockets
 				Console.WriteLine("Received data from Client " + length);
 				StartReceive();
 			}
-			catch (SocketException ex) { Console.WriteLine("BeginReceiveSocketException: " + ex); Disconnect(); }
-			catch (ObjectDisposedException ex) { Console.WriteLine("BeginReceiveDisposedException: " + ex); Dispose(false); }
+			catch (SocketException ex) { Console.WriteLine("BeginReceiveSocketException: " + ex); }
+			catch (ObjectDisposedException ex) { Console.WriteLine("BeginReceiveDisposedException: " + ex); }
 			catch (Exception ex) { Console.WriteLine("BeginReceiveException: " + ex); }
 		}
-
-		public async void SendAsync(byte[] data)
+		private void OnConnected()
 		{
-			if (!Connected || data?.Length <= 0)
-				return;
-
-			try { await _socket.Client.SendAsync(new ArraySegment<byte>(data), SocketFlags.None); }
-			catch (SocketException ex) { Console.WriteLine("SendSocketException: " + ex); Disconnect(); }
-			catch (ObjectDisposedException ex) { Console.WriteLine("SendDisposedException: " + ex); Dispose(false); }
-			catch (Exception ex) { Console.WriteLine("SendException: " + ex); }
+			StartReceive();
+			OnStatusChanged?.Invoke(this, ClientStatus.Connected);
 		}
 		private void Dispose(bool disposing)
 		{
@@ -157,7 +168,7 @@ namespace Core.Net.Sockets
 			catch { }
 			finally
 			{
-				OnStatusChanged?.Invoke(this, ClientStatus.Connected);
+				OnStatusChanged?.Invoke(this, ClientStatus.Disconnected);
 				OnStatusChanged = null;
 				OnReceive = null;
 				_socket = null;
